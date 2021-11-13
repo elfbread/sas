@@ -1,4 +1,4 @@
-/*SET ELC LIBRARY, SHOULD AUTORUN*/
+/*SET ELC LIBRARY, SHOULD AUTORUN AT START*/
 libname elc base "P:\EPI\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\Source Files";
 
 /*UPDATE DATE TO TODAY'S DATE*/
@@ -47,6 +47,8 @@ data check;
 run;
 
 /*CLAIRE'S FINAL CODE*/
+/*dates were deteremined by grant, should be monthly*/
+/*UPDATE RPT_DTS*/
 data check;
 	set &covid;
 	where rpt_dt between "&firstdate"d and "&seconddate"d;
@@ -128,3 +130,55 @@ proc export data=check_outliers
 	dbms=xlsx replace
 	outfile="P:\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\outlier_check_&date";
 run;
+
+/*Report print out*/
+title "Cases with NEDSS investigation start dates between &firstdate and &seconddate";
+
+proc format;
+	value case_status
+		1="Confirmed"
+		2="Probable";
+run;
+
+title2 "Confirmed and Probable Case Counts";
+
+proc print data=work.cases label noobs;
+	var case_status count percent;
+	format percent 12.2
+		count comma8.
+		case_status case_status.;
+	label case_status='Case Status' count='Count' percent='Percent';
+run;
+
+title;
+title2;
+title "Outliers Included &firstdate and &seconddate";
+ods graphics on;
+
+proc print data=work.with_outliers_lagtime noobs label style(header)=[fontsize=2] style(data)=[fontsize=2];
+	var lag_time_n lag_time_mean lag_time_Median lag_time_Max lag_time_Min;
+	label lag_time_N='Number of COVID-19 cases with spec collect date listed'
+		lag_time_Max='Maximum lag time in days between spec collection date and investigation start date'
+		lag_time_Min='Minimum lag time in days between spec collection and investigation start date'
+		lag_time_Mean='Average lag time in days between collection and investigation start'
+		lag_time_Median='Median lag time in days between collection and investigation start';
+	format lag_time_Mean 12.2;
+run;
+
+ods graphics off;
+title;
+title "Outliers Excluded &firstdate and &seconddate";
+ods graphics on;
+
+proc print data=work.no_outlier_lagtime_ave noobs label style(header)=[fontsize=2] style(data)=[fontsize=2];
+	var lag_time_n lag_time_mean lag_time_Median lag_time_Max lag_time_Min;
+	label lag_time_N='Number of COVID-19 cases with spec collect date listed'
+		lag_time_Max='Maximum lag time in days between spec collection date and investigation start date'
+		lag_time_Min='Minimum lag time in days between spec collection and investigation start date'
+		lag_time_Mean='Average lag time in days between collection and investigation start'
+		lag_time_Median='Median lag time in days between collection and investigation start';
+	format lag_time_Mean 12.2;
+run;
+
+ods graphics off;
+title;
