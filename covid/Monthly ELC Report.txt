@@ -1,0 +1,130 @@
+/*SET ELC LIBRARY, SHOULD AUTORUN*/
+libname elc base "P:\EPI\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\Source Files";
+
+/*UPDATE DATE TO TODAY'S DATE*/
+%let date=18MAY21;
+%let firstdate=25APR21;
+%let seconddate=18MAY21;
+%let covid=ELC.ELC_PM_&date;
+
+/*IMPORT UPDATED CSV FROM REDCAP*/
+proc import datafile="P:\EPI\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\Source Files\ELC_PM_&date..csv" dbms=csv
+	out=elc.ELC_PM_&date replace;
+run;
+
+/*PRINT CHECK RPT_DT*/
+proc print data=elc.elc_pm_&date;
+	var rpt_dt nedss_id record_id;
+	where rpt_dt < '01FEB2020'd and rpt_dt ne .;
+run;
+
+/*PRINT CHECK SPECIMEN COLLECTION DATE*/
+proc print data=elc.elc_pm_&date;
+	var frst_pos_spec_collected_dt nedss_id record_id;
+	where frst_pos_spec_collected_dt between '01JAN1960'd and '01FEB2020'd;
+run;
+
+/*REPAIR OUT OF BAD DATES*/
+/* Correctvar is the variable you want to replace, either frst_pos_spec_collected_dt or rpt_dt*/
+/* Newobserv is what you want the obs to be replaced by */
+/* RC_ID is the patient RedCap ID number */
+%let correctedvar=frst_pos_spec_collected_dt;
+%let newobserv=20JAN21;
+%let rc_id=397683;
+
+data ELC.ELC_PM_&date;
+	set ELC.ELC_PM_&date;
+
+	if record_id=&rc_id then
+		&correctedvar="&newobserv"d;
+run;
+
+/*Confirm the change was made*/
+data check;
+	set ELC.ELC_PM_&date;
+
+	if record_id = &rc_id;
+run;
+
+/*CLAIRE'S FINAL CODE*/
+data check;
+	set &covid;
+	where rpt_dt between "&firstdate"d and "&seconddate"d;
+run;
+
+proc freq data=check;
+	table case_status/out=cases;
+run;
+
+/*creating lag time var and removing missing frst positive spec collect date*/
+data check1;
+	*length lag_time 8;
+	set check;
+	lag_time=(rpt_dt - frst_pos_spec_collected_dt);
+
+	if frst_pos_spec_collected_dt ne . then
+		output check1;
+run;
+
+/*running proc means to get lag_time with outliers*/
+proc means data=work.check1 N Mean Median Min Max;
+	var lag_time;
+	output out=with_outliers_lagtime  (drop= _TYPE_ _FREQ_)
+		n =
+		Mean =
+		Median =
+		Min =
+		Max = / autoname;
+run;
+
+/*creating identifiers for outliers*/
+data check_outliers;
+	set check1;
+
+	if lag_time lt 0 then
+		outlier=1;
+	else if lag_time gt 20 then
+		outlier=2;
+	else outlier=3;
+run;
+
+proc freq data=check_outliers;
+	table outlier / out=outlier_frq;
+run;
+
+data no_outliers;
+	set check_outliers;
+
+	if outlier in (1,2) then
+		delete;
+run;
+
+proc means data=check_outliers N Mean Median Min Max;
+	var lag_time;
+	where outlier=3;
+	OUTPUT OUT=NO_OUTLIER_LAGTIME_AVE  (drop= _TYPE_ _FREQ_) 
+		n =
+		Mean =
+		Median =
+		Min =
+		Max = / autoname;
+run;
+
+%macro exported(dataneed=,sheetname=);
+
+	proc export data=&dataneed
+		dbms=xlsx replace
+		outfile="P:\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\ELC_Metrics_&date";
+		sheet="&sheetname";
+	run;
+
+%mend exported;
+
+%exported (dataneed=cases,sheetname=cases_numbers);
+%exported (dataneed=with_outliers_lagtime,sheetname=w_outliers_lagtime);
+%exported (dataneed=no_outlier_lagtime_ave,sheetname=wo_outliers_lagtime);
+
+proc export data=check_outliers
+	dbms=xlsx replace
+	outfile="P:\Report Dis\COVID Daily Report\CH\QC Stuff\ELC Metrics\outlier_check_&date";
+run;
